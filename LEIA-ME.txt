@@ -1,0 +1,29 @@
+PROJETO SERVNET — DEMONSTRAÇÃO EM REACT
+
+REQUISITOS
+- Node.js 18 ou superior
+- npm (incluído no Node.js)
+
+COMO RODAR
+1. Extraia o ZIP (ou abra a pasta do repositório) no terminal.
+2. Instale as dependências:
+   npm install
+3. Inicie o servidor local:
+   npm run dev
+4. Abra no navegador a URL que o terminal mostrar (normalmente http://localhost:5173).
+
+DADOS DE DEMONSTRAÇÃO
+Matrícula: SN-20418
+Senha: servnet2025
+
+No quadro “Prévia de demonstração”, use “Abrir painel CPD de demonstração” para acessar a área administrativa demonstrativa.
+
+O QUE ESTÁ INCLUÍDO
+- Interface React responsiva para associado.
+- Tailwind CSS v4 com tokens semânticos de cor, fonte e raio para SERVNET.
+- Carteirinha digital com opções de impressão/salvar em PDF e exportar em PNG.
+- Painel CPD de demonstração com cadastro, edição, remoção, busca e importação CSV.
+- Os cadastros criados ficam somente no armazenamento local do navegador.
+
+IMPORTANTE
+Esta é uma demonstração visual, sem backend, banco de dados compartilhado ou autenticação segura. Não cadastre dados pessoais reais. O painel CPD de demonstração não é protegido por autenticação e deve ser substituído por uma implementação segura antes de qualquer uso real. O logo e o modelo da carteirinha são placeholders.
