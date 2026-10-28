@@ -1,29 +1,19 @@
-PROJETO SERVNET — DEMONSTRAÇÃO EM REACT
+SERVNET — VERSÃO DE TESTE COM SUPABASE
 
-REQUISITOS
-- Node.js 18 ou superior
-- npm (incluído no Node.js)
+CONFIGURAÇÃO
+1. Crie um projeto Supabase.
+2. Copie .env.example para .env e preencha a URL e a publishable key do projeto.
+3. Execute supabase/migrations/20261028000000_servnet.sql no SQL Editor.
+4. Desative novos cadastros públicos em Authentication settings.
+5. Crie a conta TI/CPD em Authentication > Users; depois ajuste app_metadata com supabase/bootstrap-admin.sql.
+6. Use npx supabase login, npx supabase link --project-ref REF_DO_PROJETO e npx supabase functions deploy member-management.
+7. A função aceita localhost:5173 para teste. Para publicar o site, configure SERVNET_ALLOWED_ORIGINS com a origem oficial usando npx supabase secrets set.
+8. Rode npm install e npm run dev.
 
-COMO RODAR
-1. Extraia o ZIP (ou abra a pasta do repositório) no terminal.
-2. Instale as dependências:
-   npm install
-3. Inicie o servidor local:
-   npm run dev
-4. Abra no navegador a URL que o terminal mostrar (normalmente http://localhost:5173).
+O associado entra com matrícula e senha. A TI/CPD usa o e-mail da conta administrativa.
 
-DADOS DE DEMONSTRAÇÃO
-Matrícula: SN-20418
-Senha: servnet2025
-
-No quadro “Prévia de demonstração”, use “Abrir painel CPD de demonstração” para acessar a área administrativa demonstrativa.
-
-O QUE ESTÁ INCLUÍDO
-- Interface React responsiva para associado.
-- Tailwind CSS v4 com tokens semânticos de cor, fonte e raio para SERVNET.
-- Carteirinha digital com opções de impressão/salvar em PDF e exportar em PNG.
-- Painel CPD de demonstração com cadastro, edição, remoção, busca e importação CSV.
-- Os cadastros criados ficam somente no armazenamento local do navegador.
-
-IMPORTANTE
-Esta é uma demonstração visual, sem backend, banco de dados compartilhado ou autenticação segura. Não cadastre dados pessoais reais. O painel CPD de demonstração não é protegido por autenticação e deve ser substituído por uma implementação segura antes de qualquer uso real. O logo e o modelo da carteirinha são placeholders.
+SEGURANÇA
+- O navegador usa apenas a publishable key, sempre protegida pelas políticas RLS.
+- A chave service role fica somente nas Edge Functions; nunca coloque essa chave no .env do frontend nem no GitHub.
+- Não coloque nomes, matrículas reais nem arquivos .env neste repositório público.
+- Para produção, habilite MFA para a equipe e configure backup e restauração do banco.

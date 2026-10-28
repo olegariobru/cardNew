@@ -1,33 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertCircle, Asterisk, ArrowRight, Check, CheckCircle2, ChevronDown, CircleHelp,
-  CreditCard, Download, Eye, EyeOff, FileImage, Leaf, LockKeyhole,
+  CreditCard, Download, Eye, EyeOff, FileImage, KeyRound, Leaf, LockKeyhole,
   LogOut, Pencil, Plus, Search, Settings2, ShieldCheck, Trash2, Upload, UserRound, UsersRound, X,
 } from 'lucide-react';
+import { callMemberManagement, loginWithAdminCredentials, loginWithMemberCredentials, logoutSupabase, restoreCurrentUser } from './supabase';
 import './style.css';
-
-const STORAGE_KEY = 'servnet_members_v1';
-const SAMPLE_MEMBER = { name: 'Mariana Costa', registration: 'SN-20418', password: 'servnet2025' };
-const INITIAL_MEMBERS = readMembers();
-
-function readMembers() {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeMembers(nextMembers) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMembers));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function IconBox({ children, className = '' }) {
   return <span className={className}>{children}</span>;
@@ -75,20 +54,29 @@ function ContactDetails({ help = false }) {
   );
 }
 
-function LoginScreen({ members, onLogin, onAdmin }) {
+function LoginScreen({ onLogin, onToast }) {
   const [showPassword, setShowPassword] = useState(false);
   const [modal, setModal] = useState(false);
+  const [adminMode, setAdminMode] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
-  const [form, setForm] = useState({ registration: '', password: '' });
+  const [form, setForm] = useState({ username: '', password: '' });
 
-  const handleSubmit = event => {
+  const handleSubmit = async event => {
     event.preventDefault();
-    const registration = form.registration.trim();
-    const found = registration.toLowerCase() === SAMPLE_MEMBER.registration.toLowerCase() && form.password === SAMPLE_MEMBER.password
-      ? SAMPLE_MEMBER
-      : members.find(member => member.registration.toLowerCase() === registration.toLowerCase() && member.password === form.password);
-    if (found) onLogin(found);
-    else setFormError('Matrícula ou senha incorreta. Confira os dados ou fale com o CPD.');
+    setBusy(true);
+    setFormError('');
+    try {
+      const user = adminMode
+        ? await loginWithAdminCredentials(form.username, form.password)
+        : await loginWithMemberCredentials(form.username, form.password);
+      onLogin(user);
+    } catch (error) {
+      setFormError(error.message);
+      onToast(error.message, 'error');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -113,17 +101,17 @@ function LoginScreen({ members, onLogin, onAdmin }) {
         <div className="mobile-brand"><BrandMark /><span>SERVNET</span></div>
         <div className="login-form-wrap">
           <div className="welcome-icon"><UserRound /></div>
-          <div className="form-heading"><h2>Boas-vindas</h2><p>Entre com seus dados para acessar sua carteirinha.</p></div>
+          <div className="form-heading"><h2>{adminMode ? 'Acesso da equipe' : 'Boas-vindas'}</h2><p>{adminMode ? 'Entre com seu e-mail administrativo da TI/CPD.' : 'Entre com seus dados para acessar sua carteirinha.'}</p></div>
           <form onSubmit={handleSubmit}>
-            <label htmlFor="registration">Matrícula</label>
-            <div className="input-wrap"><UserRound /><input id="registration" name="registration" autoComplete="username" placeholder="Digite sua matrícula" required aria-invalid={Boolean(formError)} aria-describedby={formError ? 'login-error' : undefined} value={form.registration} onChange={event => { setFormError(''); setForm({ ...form, registration: event.target.value }); }} /></div>
+            <label htmlFor="registration">{adminMode ? 'E-mail da equipe' : 'Matrícula'}</label>
+            <div className="input-wrap"><UserRound /><input id="registration" name="username" type={adminMode ? 'email' : 'text'} autoComplete="username" placeholder={adminMode ? 'Digite seu e-mail' : 'Digite sua matrícula'} required aria-invalid={Boolean(formError)} aria-describedby={formError ? 'login-error' : undefined} value={form.username} onChange={event => { setFormError(''); setForm({ ...form, username: event.target.value }); }} /></div>
             <div className="label-row"><label htmlFor="password">Senha</label><button type="button" className="text-button" onClick={() => setModal(true)}>Esqueci minha senha</button></div>
             <div className="input-wrap"><LockKeyhole /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Digite sua senha" required aria-invalid={Boolean(formError)} aria-describedby={formError ? 'login-error' : undefined} value={form.password} onChange={event => { setFormError(''); setForm({ ...form, password: event.target.value }); }} /><button className="show-pass" type="button" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div>
             {formError && <p className="login-error" id="login-error" role="alert">{formError}</p>}
-            <button className="primary-button login-button" type="submit">Entrar na minha conta <ArrowRight /></button>
+            <button className="primary-button login-button" type="submit" disabled={busy}>{busy ? 'Verificando acesso…' : adminMode ? 'Entrar no painel' : 'Entrar na minha conta'} <ArrowRight /></button>
           </form>
           <div className="security-note"><ShieldCheck /><span>Seus dados são protegidos e acessíveis somente por você.</span></div>
-          <div className="demo-note"><strong>Prévia de demonstração</strong><span>Matrícula: SN-20418 &nbsp;·&nbsp; Senha: servnet2025</span><button type="button" className="demo-admin-link" onClick={onAdmin}>Abrir painel CPD de demonstração</button></div>
+          <div className="demo-note"><strong>{adminMode ? 'Acesso administrativo' : 'Acesso dos associados'}</strong><span>{adminMode ? 'Área exclusiva para equipe de TI/CPD.' : 'Use sua matrícula e senha cadastradas pela equipe.'}</span><button type="button" className="demo-admin-link" onClick={() => { setAdminMode(value => !value); setFormError(''); setForm({ username: '', password: '' }); }}>{adminMode ? 'Voltar ao acesso de associado' : 'Acesso da equipe TI/CPD'}</button></div>
         </div>
         <div className="login-help"><span>Precisa de ajuda?</span><button onClick={() => setModal(true)}>Fale com o CPD <ArrowRight /></button></div>
       </div>
@@ -199,14 +187,11 @@ function Dashboard({ member, onLogout, onToast }) {
   );
 }
 
-function MemberFormModal({ existing, members, onSave, onClose, onToast }) {
+function MemberFormModal({ existing, onSave, onClose, busy }) {
   const [form, setForm] = useState(existing || { name: '', registration: '', password: '' });
   const submit = event => {
     event.preventDefault();
-    const member = { name: form.name.trim(), registration: form.registration.trim(), password: form.password };
-    const duplicate = members.some(item => item.registration.toLowerCase() === member.registration.toLowerCase() && item.registration !== existing?.registration);
-    if (duplicate || member.registration.toLowerCase() === SAMPLE_MEMBER.registration.toLowerCase()) return onToast('Essa matrícula já está cadastrada.', 'error');
-    onSave(member);
+    onSave({ name: form.name.trim(), registration: form.registration.trim(), password: form.password || undefined });
   };
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
@@ -215,95 +200,163 @@ function MemberFormModal({ existing, members, onSave, onClose, onToast }) {
         <h2 id="member-modal-title">{existing ? 'Editar associado' : 'Novo associado'}</h2><p className="modal-copy">Cadastre o nome e a matrícula que serão exibidos na carteirinha.</p>
         <form onSubmit={submit}><label htmlFor="member-name">Nome completo</label><div className="input-wrap"><UserRound /><input id="member-name" required value={form.name} placeholder="Nome do associado" onChange={event => setForm({ ...form, name: event.target.value })} /></div>
           <label htmlFor="member-reg">Matrícula</label><div className="input-wrap"><CreditCard /><input id="member-reg" required readOnly={Boolean(existing)} value={form.registration} placeholder="Ex.: SN-20419" onChange={event => setForm({ ...form, registration: event.target.value })} /></div>
-          <label htmlFor="member-password">Senha inicial</label><div className="input-wrap"><LockKeyhole /><input id="member-password" required value={form.password} placeholder="Defina uma senha temporária" onChange={event => setForm({ ...form, password: event.target.value })} /></div>
-          <button className="primary-button modal-ok" type="submit">{existing ? 'Salvar alterações' : 'Cadastrar associado'}</button>
+          {!existing && <><label htmlFor="member-password">Senha inicial (opcional)</label><div className="input-wrap"><LockKeyhole /><input id="member-password" type="password" autoComplete="new-password" value={form.password} placeholder="Em branco: o sistema gera uma senha" onChange={event => setForm({ ...form, password: event.target.value })} /></div></>}
+          <button className="primary-button modal-ok" type="submit" disabled={busy}>{busy ? 'Salvando…' : existing ? 'Salvar alterações' : 'Cadastrar associado'}</button>
         </form>
       </section>
     </div>
   );
 }
 
-function MemberRows({ members, searchText, onEdit, onDelete }) {
-  const rows = [{ ...SAMPLE_MEMBER, isSample: true }, ...members].filter(member => `${member.name} ${member.registration}`.toLowerCase().includes(searchText.toLowerCase()));
+function MemberRows({ members, searchText, onEdit, onSetActive, onReset }) {
+  const rows = members.filter(member => `${member.name} ${member.registration}`.toLowerCase().includes(searchText.toLowerCase()));
   if (!rows.length) return <tr><td colSpan="4" className="empty-row">Nenhum associado encontrado.</td></tr>;
   return rows.map(member => <tr key={member.registration}>
-    <td className="member-identity"><div className="table-person"><div className="table-avatar">{initials(member.name)}</div><div><strong>{member.name}</strong><span>{member.isSample ? 'Registro de demonstração' : 'Associado SERVNET'}</span></div></div></td>
-    <td className="member-registration" data-label="Matrícula"><span className="registration-pill">{member.registration}</span></td><td className="member-access" data-label="Acesso"><span className="table-access"><i /> Ativo</span></td>
-    <td className="member-actions"><div className="row-actions">{member.isSample ? <span className="sample-tag">Exemplo</span> : <><button className="icon-button" title="Editar" aria-label={`Editar ${member.name}`} onClick={() => onEdit(member)}><Pencil /></button><button className="icon-button" title="Remover" aria-label={`Remover ${member.name}`} onClick={() => onDelete(member.registration)}><Trash2 /></button></>}</div></td>
+    <td className="member-identity"><div className="table-person"><div className="table-avatar">{initials(member.name)}</div><div><strong>{member.name}</strong><span>Associado SERVNET</span></div></div></td>
+    <td className="member-registration" data-label="Matrícula"><span className="registration-pill">{member.registration}</span></td><td className="member-access" data-label="Acesso"><span className={`table-access${member.active ? '' : ' inactive'}`}><i /> {member.active ? 'Ativo' : 'Desativado'}</span></td>
+    <td className="member-actions"><div className="row-actions"><button className="icon-button" title="Editar" aria-label={`Editar ${member.name}`} onClick={() => onEdit(member)}><Pencil /></button>{member.active ? <><button className="icon-button" title="Redefinir senha" aria-label={`Redefinir senha de ${member.name}`} onClick={() => onReset(member)}><KeyRound /></button><button className="icon-button" title="Desativar acesso" aria-label={`Desativar acesso de ${member.name}`} onClick={() => onSetActive(member, false)}><Trash2 /></button></> : <button className="icon-button" title="Reativar acesso" aria-label={`Reativar acesso de ${member.name}`} onClick={() => onSetActive(member, true)}><CheckCircle2 /></button>}</div></td>
   </tr>);
 }
 
-function AdminPanel({ members, setMembers, onLogout, onToast }) {
+function AdminPanel({ admin, onLogout, onToast }) {
+  const [members, setMembers] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [modalMember, setModalMember] = useState(null);
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [showCardInfo, setShowCardInfo] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const saveMember = member => {
-    const next = modalMember ? members.map(item => item.registration === modalMember.registration ? member : item) : [...members, member];
-    setMembers(next); writeMembers(next); setShowMemberForm(false); setModalMember(null); onToast(modalMember ? 'Cadastro atualizado.' : 'Associado cadastrado.');
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    callMemberManagement({ action: 'list' })
+      .then(result => { if (current) setMembers(result.members); })
+      .catch(error => { if (current) onToast(error.message, 'error'); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [onToast]);
+
+  const saveMember = async member => {
+    setBusy(true);
+    try {
+      if (modalMember) {
+        const result = await callMemberManagement({ action: 'update', id: modalMember.id, name: member.name });
+        setMembers(current => current.map(item => item.id === result.member.id ? result.member : item));
+        onToast('Cadastro atualizado.');
+      } else {
+        const result = await callMemberManagement({ action: 'create', ...member });
+        setMembers(current => [...current, result.member].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+        onToast(result.temporaryPassword ? `Associado cadastrado. Senha provisória: ${result.temporaryPassword}` : 'Associado cadastrado.');
+      }
+      setShowMemberForm(false);
+      setModalMember(null);
+    } catch (error) {
+      onToast(error.message, 'error');
+    } finally {
+      setBusy(false);
+    }
   };
-  const removeMember = registration => {
-    const next = members.filter(member => member.registration !== registration);
-    setMembers(next); writeMembers(next); onToast('Associado removido.');
+
+  const setMemberActive = async (member, active) => {
+    try {
+      const result = await callMemberManagement({ action: 'set_active', id: member.id, active });
+      setMembers(current => current.map(item => item.id === result.member.id ? result.member : item));
+      onToast(active ? 'Acesso do associado reativado.' : 'Acesso do associado desativado.');
+    } catch (error) {
+      onToast(error.message, 'error');
+    }
   };
+
+  const resetPassword = async member => {
+    try {
+      const result = await callMemberManagement({ action: 'reset_password', id: member.id });
+      onToast(`Nova senha provisória de ${member.registration}: ${result.temporaryPassword}`);
+    } catch (error) {
+      onToast(error.message, 'error');
+    }
+  };
+
   const importCsv = event => {
     const file = event.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const lines = String(reader.result).split(/\r?\n/).filter(Boolean); if (!lines.length) return;
       const separator = lines[0].includes(';') ? ';' : ',';
       const headers = lines[0].split(separator).map(value => value.trim().toLowerCase().replace(/^"|"$/g, ''));
       const nameIndex = headers.findIndex(value => ['nome', 'name'].includes(value));
       const registrationIndex = headers.findIndex(value => ['matricula', 'matrícula', 'registration'].includes(value));
       if (nameIndex < 0 || registrationIndex < 0) return onToast('CSV precisa ter colunas nome e matricula.', 'error');
-      const known = new Set([SAMPLE_MEMBER.registration.toLowerCase(), ...members.map(member => member.registration.toLowerCase())]);
-      const added = [];
-      for (const line of lines.slice(1)) {
+      const imported = lines.slice(1).map(line => {
         const cells = line.split(separator).map(value => value.trim().replace(/^"|"$/g, ''));
-        const name = cells[nameIndex]; const registration = cells[registrationIndex];
-        if (!name || !registration || known.has(registration.toLowerCase())) continue;
-        known.add(registration.toLowerCase()); added.push({ name, registration, password: 'servnet-temp' });
+        return { name: cells[nameIndex], registration: cells[registrationIndex] };
+      }).filter(item => item.name && item.registration);
+      setBusy(true);
+      try {
+        const result = await callMemberManagement({ action: 'import', members: imported });
+        const csvCell = value => `"${String(value).replaceAll('"', '""')}"`;
+        const rows = [['nome', 'matricula', 'senha_temporaria'], ...result.members.map(item => [item.name, item.registration, item.temporaryPassword])];
+        const csv = rows.map(row => row.map(csvCell).join(';')).join('\r\n');
+        const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a'); link.href = url; link.download = 'servnet-acessos-temporarios.csv'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setMembers(current => [...current, ...result.members].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+        onToast(`${result.members.length} associado(s) importado(s). Baixe o CSV de senhas provisórias e entregue-as diretamente aos associados.`);
+      } catch (error) {
+        onToast(error.message, 'error');
+      } finally {
+        setBusy(false);
+        event.target.value = '';
       }
-      const next = [...members, ...added]; setMembers(next); writeMembers(next); onToast(`${added.length} associado(s) importado(s). Senha temporária criada.`);
     };
-    reader.readAsText(file); event.target.value = '';
+    reader.readAsText(file);
   };
 
   return (
     <div className="admin-layout" data-ui="member-list"><aside className="sidebar admin-sidebar"><Brand className="sidebar-brand" /><div className="side-caption">PAINEL DE GESTÃO</div><button className="nav-item selected"><UsersRound /> Associados</button><button className="nav-item" onClick={() => setShowCardInfo(true)}><CreditCard /> Modelo da carteirinha</button>
-      <div className="sidebar-bottom"><div className="sidebar-help"><Settings2 /><div><strong>Área restrita</strong><span>Equipe de TI / CPD</span><button onClick={onLogout}>Sair do painel <ArrowRight /></button></div></div><div className="profile-row"><div className="avatar admin-avatar">TI</div><div className="profile-text"><strong>Equipe CPD</strong><span>Administrador de demonstração</span></div><button className="icon-button" aria-label="Sair do painel" onClick={onLogout}><LogOut /></button></div></div>
-    </aside><div className="admin-main"><header className="topbar"><div className="breadcrumb"><span>Gestão</span><ChevronDown /><strong>Associados</strong></div><button className="mobile-exit admin-mobile-exit" onClick={onLogout}><LogOut /> Sair</button><div className="top-status admin-status"><LockKeyhole /> Acesso de demonstração</div></header>
+      <div className="sidebar-bottom"><div className="sidebar-help"><Settings2 /><div><strong>Área restrita</strong><span>Equipe de TI / CPD</span><button onClick={onLogout}>Sair do painel <ArrowRight /></button></div></div><div className="profile-row"><div className="avatar admin-avatar">TI</div><div className="profile-text"><strong>{admin.email}</strong><span>Administrador SERVNET</span></div><button className="icon-button" aria-label="Sair do painel" onClick={onLogout}><LogOut /></button></div></div>
+    </aside><div className="admin-main"><header className="topbar"><div className="breadcrumb"><span>Gestão</span><ChevronDown /><strong>Associados</strong></div><button className="mobile-exit admin-mobile-exit" onClick={onLogout}><LogOut /> Sair</button><div className="top-status admin-status"><LockKeyhole /> Área autenticada</div></header>
       <main className="admin-content"><div className="page-heading admin-heading"><div><h1>Associados</h1><p>Gerencie os acessos à carteirinha digital.</p></div><button className="primary-button" onClick={() => { setModalMember(null); setShowMemberForm(true); }}><Plus /> Novo associado</button></div>
-        <div className="stats-row"><div className="stat-card"><div className="stat-icon"><UsersRound /></div><div><span>Total de associados</span><strong>{members.length + 1}</strong></div><div className="stat-caption">cadastrados</div></div><div className="stat-card"><div className="stat-icon green"><CreditCard /></div><div><span>Carteirinhas digitais</span><strong>{members.length + 1}</strong></div><div className="stat-caption">disponíveis</div></div></div>
+        <div className="stats-row"><div className="stat-card"><div className="stat-icon"><UsersRound /></div><div><span>Total de associados</span><strong>{members.length}</strong></div><div className="stat-caption">encontrados</div></div><div className="stat-card"><div className="stat-icon green"><CreditCard /></div><div><span>Acessos ativos</span><strong>{members.filter(member => member.active).length}</strong></div><div className="stat-caption">carteirinhas</div></div></div>
         <section className="members-panel"><div className="members-panel-head"><div><h2>Lista de associados</h2><p>Consulte e mantenha os dados de acesso organizados.</p></div><button className="secondary-button import-button" onClick={() => document.querySelector('#csv-file')?.click()}><Upload /> Importar planilha</button><input type="file" id="csv-file" accept=".csv,text/csv" hidden onChange={importCsv} /></div>
-          <div className="table-toolbar"><div className="search-wrap"><Search /><input aria-label="Buscar por nome ou matrícula" placeholder="Buscar por nome ou matrícula" value={searchText} onChange={event => setSearchText(event.target.value)} /></div><span className="results-count">{members.length + 1} registros</span></div>
-          <div className="table-wrap"><table><thead><tr><th>Associado</th><th>Matrícula</th><th>Acesso</th><th /></tr></thead><tbody><MemberRows members={members} searchText={searchText} onEdit={member => { setModalMember(member); setShowMemberForm(true); }} onDelete={removeMember} /></tbody></table></div>
+          <div className="table-toolbar"><div className="search-wrap"><Search /><input aria-label="Buscar por nome ou matrícula" placeholder="Buscar por nome ou matrícula" value={searchText} onChange={event => setSearchText(event.target.value)} /></div><span className="results-count">{loading ? 'Carregando…' : `${members.length} registros`}</span></div>
+          <div className="table-wrap"><table><thead><tr><th>Associado</th><th>Matrícula</th><th>Acesso</th><th /></tr></thead><tbody>{loading ? <tr><td colSpan="4" className="empty-row">Carregando associados…</td></tr> : <MemberRows members={members} searchText={searchText} onEdit={member => { setModalMember(member); setShowMemberForm(true); }} onSetActive={setMemberActive} onReset={resetPassword} />}</tbody></table></div>
           <div className="panel-foot"><CircleHelp /> Dados importados aceitam CSV com as colunas <strong>nome</strong> e <strong>matricula</strong>.</div>
         </section><footer className="dashboard-footer"><span>© 2025 SERVNET · PAINEL ADMINISTRATIVO</span><span>Equipe de Tecnologia / CPD</span></footer>
       </main></div>
-      {showMemberForm && <MemberFormModal existing={modalMember} members={members} onSave={saveMember} onClose={() => setShowMemberForm(false)} onToast={onToast} />}
+      {showMemberForm && <MemberFormModal existing={modalMember} onSave={saveMember} busy={busy} onClose={() => setShowMemberForm(false)} />}
       {showCardInfo && <Modal title="Modelo da carteirinha" onClose={() => setShowCardInfo(false)}><p className="modal-copy">O modelo de teste está ativo. Quando você tiver o arquivo oficial, poderá substituir este placeholder e ajustar a posição dos dados.</p></Modal>}
     </div>
   );
 }
 
 function App() {
-  const [members, setMembers] = useState(INITIAL_MEMBERS);
-  const [member, setMember] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const sendToast = useCallback((message, kind = 'success') => setToast({ message, kind }), []);
-  const logout = useCallback(() => { setMember(null); setIsAdmin(false); }, []);
+  useEffect(() => {
+    let current = true;
+    restoreCurrentUser()
+      .then(result => { if (current) setUser(result); })
+      .catch(() => { if (current) setUser(null); })
+      .finally(() => { if (current) setAuthLoading(false); });
+    return () => { current = false; };
+  }, []);
+
+  const logout = useCallback(async () => {
+    try { await logoutSupabase(); } catch (error) { sendToast(error.message, 'error'); }
+    setUser(null);
+  }, [sendToast]);
 
   React.useEffect(() => {
-    document.body.className = member || isAdmin ? 'app-body' : 'login-body';
-  }, [member, isAdmin]);
+    document.body.className = user ? 'app-body' : 'login-body';
+  }, [user]);
 
   let screen;
-  if (isAdmin) screen = <AdminPanel members={members} setMembers={setMembers} onLogout={logout} onToast={sendToast} />;
-  else if (member) screen = <Dashboard member={member} onLogout={logout} onToast={sendToast} />;
-  else screen = <LoginScreen members={members} onLogin={setMember} onAdmin={() => setIsAdmin(true)} />;
+  if (authLoading) screen = <div className="auth-loading" role="status">Carregando acesso seguro…</div>;
+  else if (user?.role === 'admin') screen = <AdminPanel admin={user} onLogout={logout} onToast={sendToast} />;
+  else if (user?.role === 'member') screen = <Dashboard member={user} onLogout={logout} onToast={sendToast} />;
+  else screen = <LoginScreen onLogin={setUser} onToast={sendToast} />;
 
   return <div className="font-servnet">{screen}<Toast toast={toast} /></div>;
 }

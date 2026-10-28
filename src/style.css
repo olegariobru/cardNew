@@ -149,3 +149,7 @@ td{height:56px;font-size:14px}
 .login-form-wrap label,.member-modal label{font-size:13px}
 .input-wrap input{font-size:14px}
 .side-caption{font-size:12px}
+.auth-loading{min-height:100svh;display:grid;place-items:center;background:#f7f8f5;color:#4c5542;font:500 14px 'DM Sans',sans-serif}
+.table-access.inactive{color:#9c5d51}
+.table-access.inactive i{background:#b76d5e}
+.toast{max-width:min(540px,calc(100vw - 32px))}.toast span{overflow-wrap:anywhere}
