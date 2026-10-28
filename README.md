@@ -1,32 +1,37 @@
 # SERVNET — Carteirinha de Associado
 
-Protótipo demonstrativo de um portal responsivo para associados da SERVNET.
+Portal responsivo para a carteirinha digital SERVNET, com API Node.js e banco PostgreSQL.
 
-## Executar localmente
+## Requisitos
 
-Requisitos: Node.js 18 ou superior e npm.
+- Node.js 18 ou superior e npm.
+- Docker Desktop para iniciar PostgreSQL localmente, ou uma instância PostgreSQL acessível.
 
-```bash
-npm install
-npm run dev
-```
+## Rodar localmente
 
-Abra no navegador o endereço informado pelo Vite (normalmente `http://localhost:5173`).
+1. Instale as dependências: `npm install`.
+2. Copie `.env.example` para `.env` e configure uma senha administrativa forte e única.
+3. Inicie o PostgreSQL local: `docker compose up -d db`.
+4. Prepare as tabelas: `npm run migrate`.
+5. Crie a conta inicial da TI/CPD: `npm run seed:admin`.
+6. Em um terminal, inicie a API: `npm run start:api`.
+7. Em outro, inicie o frontend: `npm run dev`.
+8. Abra o endereço local mostrado pelo Vite, normalmente `http://localhost:5173`.
 
-## Acesso de demonstração
+A tela oferece login separado para associado e equipe TI/CPD. A conta administrativa usa os valores definidos em `ADMIN_USERNAME` e `ADMIN_PASSWORD` no `.env`.
 
-- Matrícula: `SN-20418`
-- Senha: `servnet2025`
+## Recursos do backend
 
-Na tela de login, use **Abrir painel CPD de demonstração** para acessar a área administrativa.
+- PostgreSQL armazena associados e administradores; matrícula é única.
+- Senhas são armazenadas com Argon2id. O servidor nunca retorna o hash.
+- Sessões server-side no PostgreSQL e cookie HTTP-only, SameSite=Lax; em produção o cookie exige HTTPS.
+- Proteção CSRF para operações de escrita e limite de tentativas de login.
+- Painel TI/CPD para cadastrar, editar, desativar e redefinir senhas.
+- Importação CSV com as colunas `nome` e `matricula`; senhas provisórias aleatórias são geradas e baixadas uma única vez em um CSV separado.
+- Registros de auditoria para ações administrativas.
 
-## O que o protótipo demonstra
+## Segurança e implantação
 
-- Interface responsiva para login e consulta à carteirinha.
-- Visualização e exportação da carteirinha.
-- Painel CPD de demonstração com cadastro, edição, remoção, busca e importação CSV.
-- Persistência dos cadastros apenas no armazenamento local do navegador.
+Este repositório é público. O arquivo `.env` e segredos não devem ser enviados ao GitHub. Para produção, use PostgreSQL gerenciado, variáveis de ambiente protegidas, HTTPS e backups testados. Não use os valores de desenvolvimento do `docker-compose.yml` como credenciais de produção. Cadastre somente dados autorizados; o sistema guarda apenas nome, matrícula e hash de senha.
 
-## Limitações importantes
-
-Este repositório contém somente um protótipo de interface. Não há servidor, banco de dados compartilhado nem autenticação segura. O painel CPD não é protegido por login. Não use dados pessoais reais nem as credenciais de demonstração em produção. Antes de atender associados reais, será necessário implementar backend, banco de dados, autenticação e controle de acesso seguros. Logotipo e modelo da carteirinha são placeholders.
+O protótipo visual de carteirinha usa dados ilustrativos no desenho de login. Não há associados reais incluídos no repositório.

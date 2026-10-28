@@ -1,29 +1,26 @@
-PROJETO SERVNET — DEMONSTRAÇÃO EM REACT
+SERVNET — PORTAL DA CARTEIRINHA
 
 REQUISITOS
 - Node.js 18 ou superior
-- npm (incluído no Node.js)
+- npm
+- Docker Desktop (para iniciar o PostgreSQL local) ou um banco PostgreSQL acessível
 
-COMO RODAR
-1. Extraia o ZIP (ou abra a pasta do repositório) no terminal.
-2. Instale as dependências:
-   npm install
-3. Inicie o servidor local:
-   npm run dev
-4. Abra no navegador a URL que o terminal mostrar (normalmente http://localhost:5173).
+CONFIGURAÇÃO LOCAL
+1. Instale as dependências: npm install
+2. Copie .env.example para .env e defina uma senha administrativa forte.
+3. Inicie o banco: docker compose up -d db
+4. Crie as tabelas: npm run migrate
+5. Crie a conta TI/CPD: npm run seed:admin
+6. Em um terminal: npm run start:api
+7. Em outro terminal: npm run dev
+8. Abra o endereço local informado pelo Vite.
 
-DADOS DE DEMONSTRAÇÃO
-Matrícula: SN-20418
-Senha: servnet2025
+O login da TI/CPD usa ADMIN_USERNAME e ADMIN_PASSWORD do arquivo .env.
 
-No quadro “Prévia de demonstração”, use “Abrir painel CPD de demonstração” para acessar a área administrativa demonstrativa.
-
-O QUE ESTÁ INCLUÍDO
-- Interface React responsiva para associado.
-- Tailwind CSS v4 com tokens semânticos de cor, fonte e raio para SERVNET.
-- Carteirinha digital com opções de impressão/salvar em PDF e exportar em PNG.
-- Painel CPD de demonstração com cadastro, edição, remoção, busca e importação CSV.
-- Os cadastros criados ficam somente no armazenamento local do navegador.
-
-IMPORTANTE
-Esta é uma demonstração visual, sem backend, banco de dados compartilhado ou autenticação segura. Não cadastre dados pessoais reais. O painel CPD de demonstração não é protegido por autenticação e deve ser substituído por uma implementação segura antes de qualquer uso real. O logo e o modelo da carteirinha são placeholders.
+SEGURANÇA
+- Senhas ficam no banco apenas como hash Argon2id.
+- Associados e administradores usam sessão no servidor.
+- A importação CSV aceita as colunas nome e matricula.
+- As senhas provisórias importadas são baixadas em um arquivo separado; entregue-as diretamente aos associados.
+- O repositório é público. Nunca coloque .env, dados reais ou segredos no GitHub.
+- Os dados ilustrativos da tela inicial servem apenas para representar o visual; não são contas válidas.

@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: servnet
+      POSTGRES_PASSWORD: servnet
+      POSTGRES_DB: servnet
+    ports:
+      - "5432:5432"
+    volumes:
+      - servnet-postgres:/var/lib/postgresql/data
+
+volumes:
+  servnet-postgres:
