@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertCircle, Asterisk, ArrowRight, Check, CheckCircle2, ChevronDown, CircleHelp,
-  CreditCard, Download, Eye, EyeOff, FileImage, KeyRound, Leaf, LockKeyhole,
+  Copy, CreditCard, Download, Eye, EyeOff, FileImage, KeyRound, Leaf, LockKeyhole,
   LogOut, Pencil, Plus, Search, Settings2, ShieldCheck, Trash2, Upload, UserRound, UsersRound, X,
 } from 'lucide-react';
 import { callMemberManagement, loginWithAdminCredentials, loginWithMemberCredentials, logoutSupabase, restoreCurrentUser } from './supabase';
@@ -20,10 +20,23 @@ function Brand({ className = '' }) {
   return <div className={`brand ${className}`}><BrandMark /><span>SERVNET</span></div>;
 }
 
-function Toast({ toast }) {
+function Toast({ toast, onDismiss }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!toast) return undefined;
+    const hideDelay = toast.kind === 'error' ? 4700 : 2700;
+    const dismissDelay = toast.kind === 'error' ? 5000 : 3000;
+    const hideTimer = window.setTimeout(() => setVisible(false), hideDelay);
+    const dismissTimer = window.setTimeout(onDismiss, dismissDelay);
+    setVisible(true);
+    return () => {
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(dismissTimer);
+    };
+  }, [toast, onDismiss]);
   if (!toast) return <div className="toast" aria-live="polite" />;
   const Icon = toast.kind === 'error' ? AlertCircle : CheckCircle2;
-  return <div className="toast show" role="status"><Icon aria-hidden="true" /><span>{toast.message}</span></div>;
+  return <div className={`toast${visible ? ' show' : ''}`} role="status"><Icon aria-hidden="true" /><span>{toast.message}</span></div>;
 }
 
 function Modal({ title, children, onClose, icon: ModalIcon = CircleHelp, confirmLabel = 'Entendi' }) {
@@ -40,6 +53,35 @@ function Modal({ title, children, onClose, icon: ModalIcon = CircleHelp, confirm
   );
 }
 
+function TemporaryPasswordModal({ registration, password, onClose }) {
+  const passwordInput = useRef(null);
+  const [copyMessage, setCopyMessage] = useState('');
+
+  const copyPassword = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(password);
+      setCopyMessage('Senha copiada.');
+    } catch {
+      passwordInput.current?.focus();
+      passwordInput.current?.select();
+      setCopyMessage('Senha selecionada. Pressione Ctrl+C para copiar.');
+    }
+  };
+
+  return (
+    <Modal title="Senha temporária" icon={KeyRound} onClose={onClose} confirmLabel="Concluir">
+      <p className="modal-copy">Nova senha de acesso para a matrícula <strong>{registration}</strong>. Copie e entregue ao associado por um canal seguro.</p>
+      <label className="temporary-password-label" htmlFor="temporary-password">Senha gerada</label>
+      <div className="temporary-password-copy">
+        <input ref={passwordInput} id="temporary-password" className="temporary-password-value" type="text" value={password} readOnly onFocus={event => event.currentTarget.select()} aria-describedby="temporary-password-help" />
+        <button type="button" className="secondary-button" onClick={copyPassword}><Copy aria-hidden="true" /> Copiar</button>
+      </div>
+      <p className="temporary-password-help" id="temporary-password-help" aria-live="polite">{copyMessage || 'A senha aparece somente nesta janela.'}</p>
+    </Modal>
+  );
+}
+
 function ContactDetails({ help = false }) {
   return (
     <>
@@ -50,6 +92,32 @@ function ContactDetails({ help = false }) {
         {help ? <CircleHelp aria-hidden="true" /> : <LockKeyhole aria-hidden="true" />}
         <div><strong>{help ? 'Atendimento ao associado' : 'Equipe de TI / CPD'}</strong><span>{help ? 'Equipe de Tecnologia / CPD' : 'Atendimento para associados'}</span></div>
       </div>
+    </>
+  );
+}
+
+function PasswordResetRequest({ username, adminMode }) {
+  const recipient = import.meta.env.VITE_CPD_EMAIL?.trim() || '';
+  const validRecipient = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient);
+  const subject = adminMode ? 'Solicitação de redefinição de senha administrativa' : 'Solicitação de redefinição de senha';
+  const identifierLabel = adminMode ? 'E-mail administrativo' : 'Matrícula';
+  const identifier = username.trim() || '[informe seu e-mail ou matrícula]';
+  const body = `Olá, equipe de TI/CPD,\n\nSolicito a redefinição da minha senha de acesso.\n${identifierLabel}: ${identifier}\n\nObrigado(a).`;
+  const mailto = validRecipient
+    ? `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    : undefined;
+
+  return (
+    <>
+      <p className="modal-copy">Este pedido não troca a senha automaticamente. A equipe de TI/CPD precisa confirmar que você é associado antes de iniciar a redefinição.</p>
+      <div className="contact-card">
+        <LockKeyhole aria-hidden="true" />
+        <div><strong>Como a equipe vai validar</strong><span>Consulta ao cadastro oficial e confirmação por telefone/e-mail já registrado ou presencialmente.</span></div>
+      </div>
+      <p className="reset-security-note">A matrícula informada no pedido, sozinha, não comprova identidade. Não envie sua senha atual nem documentos pessoais por e-mail.</p>
+      {mailto
+        ? <a className="primary-button reset-email-button" href={mailto}>Enviar solicitação por e-mail <ArrowRight aria-hidden="true" /></a>
+        : <p className="reset-email-hint">Configure <code>VITE_CPD_EMAIL</code> no arquivo <code>.env</code> para habilitar o envio.</p>}
     </>
   );
 }
@@ -100,22 +168,25 @@ function LoginScreen({ onLogin, onToast }) {
       <div className="login-panel">
         <div className="mobile-brand"><BrandMark /><span>SERVNET</span></div>
         <div className="login-form-wrap">
-          <div className="welcome-icon"><UserRound /></div>
-          <div className="form-heading"><h2>{adminMode ? 'Acesso da equipe' : 'Boas-vindas'}</h2><p>{adminMode ? 'Entre com seu e-mail administrativo da TI/CPD.' : 'Entre com seus dados para acessar sua carteirinha.'}</p></div>
+          <div className="login-mode-switch" role="group" aria-label="Escolha o tipo de acesso">
+            <button type="button" className={!adminMode ? 'active' : ''} aria-pressed={!adminMode} onClick={() => { setAdminMode(false); setFormError(''); setForm({ username: '', password: '' }); }}><UserRound aria-hidden="true" /> Associado</button>
+            <button type="button" className={adminMode ? 'active' : ''} aria-pressed={adminMode} onClick={() => { setAdminMode(true); setFormError(''); setForm({ username: '', password: '' }); }}><ShieldCheck aria-hidden="true" /> Equipe TI/CPD</button>
+          </div>
+          <div className="login-mode-caption">{adminMode ? 'Acesso restrito à equipe administrativa.' : 'Entre com sua matrícula para abrir sua carteirinha.'}</div>
+          <div className="welcome-icon">{adminMode ? <ShieldCheck /> : <UserRound />}</div>
+          <div className="form-heading"><h2>{adminMode ? 'Acesso da equipe' : 'Acesso do associado'}</h2><p>{adminMode ? 'Use seu e-mail administrativo e sua senha.' : 'Informe sua matrícula e senha cadastradas pela equipe.'}</p></div>
           <form onSubmit={handleSubmit}>
             <label htmlFor="registration">{adminMode ? 'E-mail da equipe' : 'Matrícula'}</label>
             <div className="input-wrap"><UserRound /><input id="registration" name="username" type={adminMode ? 'email' : 'text'} autoComplete="username" placeholder={adminMode ? 'Digite seu e-mail' : 'Digite sua matrícula'} required aria-invalid={Boolean(formError)} aria-describedby={formError ? 'login-error' : undefined} value={form.username} onChange={event => { setFormError(''); setForm({ ...form, username: event.target.value }); }} /></div>
             <div className="label-row"><label htmlFor="password">Senha</label><button type="button" className="text-button" onClick={() => setModal(true)}>Esqueci minha senha</button></div>
             <div className="input-wrap"><LockKeyhole /><input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Digite sua senha" required aria-invalid={Boolean(formError)} aria-describedby={formError ? 'login-error' : undefined} value={form.password} onChange={event => { setFormError(''); setForm({ ...form, password: event.target.value }); }} /><button className="show-pass" type="button" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div>
             {formError && <p className="login-error" id="login-error" role="alert">{formError}</p>}
-            <button className="primary-button login-button" type="submit" disabled={busy}>{busy ? 'Verificando acesso…' : adminMode ? 'Entrar no painel' : 'Entrar na minha conta'} <ArrowRight /></button>
+            <button className="primary-button login-button" type="submit" disabled={busy}>{busy ? 'Verificando acesso…' : adminMode ? 'Acessar painel TI/CPD' : 'Acessar carteirinha'} <ArrowRight /></button>
           </form>
           <div className="security-note"><ShieldCheck /><span>Seus dados são protegidos e acessíveis somente por você.</span></div>
-          <div className="demo-note"><strong>{adminMode ? 'Acesso administrativo' : 'Acesso dos associados'}</strong><span>{adminMode ? 'Área exclusiva para equipe de TI/CPD.' : 'Use sua matrícula e senha cadastradas pela equipe.'}</span><button type="button" className="demo-admin-link" onClick={() => { setAdminMode(value => !value); setFormError(''); setForm({ username: '', password: '' }); }}>{adminMode ? 'Voltar ao acesso de associado' : 'Acesso da equipe TI/CPD'}</button></div>
         </div>
-        <div className="login-help"><span>Precisa de ajuda?</span><button onClick={() => setModal(true)}>Fale com o CPD <ArrowRight /></button></div>
       </div>
-      {modal && <Modal title="Solicitar troca de senha" icon={LockKeyhole} onClose={() => setModal(false)}><ContactDetails /></Modal>}
+      {modal && <Modal title="Solicitar redefinição de senha" icon={LockKeyhole} onClose={() => setModal(false)}><PasswordResetRequest username={form.username} adminMode={adminMode} /></Modal>}
     </section>
   );
 }
@@ -131,15 +202,33 @@ function MembershipCard({ member }) {
   );
 }
 
+function getCardPalette() {
+  const styles = getComputedStyle(document.documentElement);
+  const token = name => styles.getPropertyValue(name).trim();
+  return {
+    card: token('--brand-surface'),
+    panel: token('--brand-panel'),
+    text: token('--brand-text'),
+    font: getComputedStyle(document.documentElement).fontFamily,
+    accent: token('--brand-accent'),
+    accentInk: token('--accent-ink'),
+    muted: token('--brand-muted'),
+    line: token('--brand-border'),
+    soft: token('--brand-accent-soft'),
+    tint: token('--accent-soft'),
+  };
+}
+
 function downloadCard(member, format, onToast) {
+  const palette = getCardPalette();
   if (format === 'pdf') {
     const printable = window.open('', '_blank', 'width=900,height=620');
     if (!printable) return onToast('Permita a abertura de janela para gerar o PDF.', 'error');
-    printable.document.write(`<!doctype html><html><head><title>Carteirinha SERVNET</title><style>@page{size:landscape;margin:18mm}body{margin:0;display:grid;place-items:center;min-height:100svh;font-family:Arial,sans-serif;background:#fff}.card{width:850px;height:520px;box-sizing:border-box;background:#30362d;border-radius:24px;color:white;padding:48px 56px;position:relative;overflow:hidden}.logo{width:50px;height:50px;border-radius:14px;background:#87976d;display:grid;place-items:center;color:#fff}.logo svg{width:30px;height:30px}.head{display:flex;align-items:center;gap:16px}.head strong{font-size:26px;letter-spacing:3px}.head small{display:block;font-size:10px;letter-spacing:2px;color:#c2c7b9;margin-top:5px}.label{font-size:10px;letter-spacing:2px;color:#c2c7b9;margin-top:78px}.name{font-size:32px;font-weight:700;margin-top:10px}.foot{display:flex;justify-content:space-between;align-items:end;margin-top:65px}.foot small{display:block;letter-spacing:2px;color:#c2c7b9;font-size:10px}.foot strong{font-size:24px;display:block;margin-top:8px}.kind{font-size:11px;letter-spacing:2px;border-radius:30px;padding:14px;background:#424b39}</style></head><body><div class="card"><div class="head"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 4 13c0-6 8-9 16-9 0 8-3 16-9 16Z"/><path d="M8 16c2-2 5-4 9-6"/></svg></div><div><strong>SERVNET</strong><small>ASSOCIAÇÃO DE SERVIÇOS</small></div></div><div class="label">ASSOCIADO(A)</div><div class="name">${escapeHtml(member.name)}</div><div class="foot"><div><small>MATRÍCULA</small><strong>${escapeHtml(member.registration)}</strong></div><div class="kind">IDENTIFICAÇÃO DE ASSOCIADO</div></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+    printable.document.write(`<!doctype html><html><head><title>Carteirinha SERVNET</title><style>@page{size:landscape;margin:18mm}body{margin:0;display:grid;place-items:center;min-height:100svh;font-family:${palette.font};background:#fff}.card{width:850px;height:520px;box-sizing:border-box;background:${palette.card};border-radius:0;color:${palette.text};padding:48px 56px;position:relative;overflow:hidden}.logo{width:50px;height:50px;border-radius:0;background:${palette.accent};display:grid;place-items:center;color:${palette.panel}}.logo svg{width:30px;height:30px}.head{display:flex;align-items:center;gap:16px}.head strong{font-size:26px;letter-spacing:3px}.head small{display:block;font-size:10px;letter-spacing:2px;color:${palette.muted};margin-top:5px}.label{font-size:10px;letter-spacing:2px;color:${palette.muted};margin-top:78px}.name{font-size:32px;font-weight:700;margin-top:10px}.foot{display:flex;justify-content:space-between;align-items:end;margin-top:65px}.foot small{display:block;letter-spacing:2px;color:${palette.muted};font-size:10px}.foot strong{font-size:24px;display:block;margin-top:8px}.kind{font-size:11px;letter-spacing:2px;border-radius:0;padding:14px;background:${palette.tint};color:${palette.accentInk}}</style></head><body><div class="card"><div class="head"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 4 13c0-6 8-9 16-9 0 8-3 16-9 16Z"/><path d="M8 16c2-2 5-4 9-6"/></svg></div><div><strong>SERVNET</strong><small>ASSOCIAÇÃO DE SERVIÇOS</small></div></div><div class="label">ASSOCIADO(A)</div><div class="name">${escapeHtml(member.name)}</div><div class="foot"><div><small>MATRÍCULA</small><strong>${escapeHtml(member.registration)}</strong></div><div class="kind">IDENTIFICAÇÃO DE ASSOCIADO</div></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
     printable.document.close();
     return;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720"><rect width="1200" height="720" rx="36" fill="#30362d"/><circle cx="1110" cy="640" r="300" fill="none" stroke="#9da788" stroke-opacity=".12" stroke-width="2"/><circle cx="1110" cy="640" r="220" fill="none" stroke="#9da788" stroke-opacity=".12" stroke-width="2"/><rect x="68" y="58" width="76" height="76" rx="20" fill="#87976d"/><path d="M106 120c-14-5-21-16-17-29 4-13 19-20 41-22-1 22-8 45-24 51Zm-8-18 23-20" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><text x="166" y="93" fill="white" font-family="Arial" font-size="32" font-weight="700" letter-spacing="5">SERVNET</text><text x="166" y="120" fill="#c2c7b9" font-family="Arial" font-size="14" letter-spacing="3">ASSOCIAÇÃO DE SERVIÇOS</text><text x="68" y="358" fill="#c2c7b9" font-family="Arial" font-size="15" letter-spacing="4">ASSOCIADO(A)</text><text x="68" y="414" fill="white" font-family="Arial" font-size="42" font-weight="700">${escapeXml(member.name)}</text><text x="68" y="565" fill="#c2c7b9" font-family="Arial" font-size="14" letter-spacing="4">MATRÍCULA</text><text x="68" y="610" fill="white" font-family="Arial" font-size="30" font-weight="700">${escapeXml(member.registration)}</text><text x="1125" y="608" fill="#e4e8da" font-family="Arial" font-size="14" text-anchor="end" letter-spacing="3">IDENTIFICAÇÃO DE ASSOCIADO</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720"><rect width="1200" height="720" rx="0" fill="${palette.card}"/><circle cx="1110" cy="640" r="300" fill="none" stroke="${palette.line}" stroke-opacity=".12" stroke-width="2"/><circle cx="1110" cy="640" r="220" fill="none" stroke="${palette.line}" stroke-opacity=".12" stroke-width="2"/><rect x="68" y="58" width="76" height="76" rx="0" fill="${palette.accent}"/><path d="M106 120c-14-5-21-16-17-29 4-13 19-20 41-22-1 22-8 45-24 51Zm-8-18 23-20" fill="none" stroke="${palette.panel}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><text x="166" y="93" fill="${palette.text}" font-family="${escapeXml(palette.font)}" font-size="32" font-weight="700" letter-spacing="5">SERVNET</text><text x="166" y="120" fill="${palette.muted}" font-family="${escapeXml(palette.font)}" font-size="14" letter-spacing="3">ASSOCIAÇÃO DE SERVIÇOS</text><text x="68" y="358" fill="${palette.muted}" font-family="${escapeXml(palette.font)}" font-size="15" letter-spacing="4">ASSOCIADO(A)</text><text x="68" y="414" fill="${palette.text}" font-family="${escapeXml(palette.font)}" font-size="42" font-weight="700">${escapeXml(member.name)}</text><text x="68" y="565" fill="${palette.muted}" font-family="${escapeXml(palette.font)}" font-size="14" letter-spacing="4">MATRÍCULA</text><text x="68" y="610" fill="${palette.text}" font-family="${escapeXml(palette.font)}" font-size="30" font-weight="700">${escapeXml(member.registration)}</text><text x="1125" y="608" fill="${palette.soft}" font-family="${escapeXml(palette.font)}" font-size="14" text-anchor="end" letter-spacing="3">IDENTIFICAÇÃO DE ASSOCIADO</text></svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
   const image = new Image();
   image.onload = () => {
@@ -188,19 +277,18 @@ function Dashboard({ member, onLogout, onToast }) {
 }
 
 function MemberFormModal({ existing, onSave, onClose, busy }) {
-  const [form, setForm] = useState(existing || { name: '', registration: '', password: '' });
+  const [form, setForm] = useState(existing || { name: '', registration: '' });
   const submit = event => {
     event.preventDefault();
-    onSave({ name: form.name.trim(), registration: form.registration.trim(), password: form.password || undefined });
+    onSave({ name: form.name.trim(), registration: form.registration.trim() });
   };
   return (
     <div className="modal-overlay" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
       <section className="modal member-modal" role="dialog" aria-modal="true" aria-labelledby="member-modal-title">
         <button className="icon-button modal-close" aria-label="Fechar" onClick={onClose}><X /></button><div className="modal-icon"><UserRound /></div>
-        <h2 id="member-modal-title">{existing ? 'Editar associado' : 'Novo associado'}</h2><p className="modal-copy">Cadastre o nome e a matrícula que serão exibidos na carteirinha.</p>
+        <h2 id="member-modal-title">{existing ? 'Editar associado' : 'Novo associado'}</h2><p className="modal-copy">Cadastre o nome e a matrícula. O sistema gera uma senha provisória única para cada associado.</p>
         <form onSubmit={submit}><label htmlFor="member-name">Nome completo</label><div className="input-wrap"><UserRound /><input id="member-name" required value={form.name} placeholder="Nome do associado" onChange={event => setForm({ ...form, name: event.target.value })} /></div>
           <label htmlFor="member-reg">Matrícula</label><div className="input-wrap"><CreditCard /><input id="member-reg" required readOnly={Boolean(existing)} value={form.registration} placeholder="Ex.: SN-20419" onChange={event => setForm({ ...form, registration: event.target.value })} /></div>
-          {!existing && <><label htmlFor="member-password">Senha inicial (opcional)</label><div className="input-wrap"><LockKeyhole /><input id="member-password" type="password" autoComplete="new-password" value={form.password} placeholder="Em branco: o sistema gera uma senha" onChange={event => setForm({ ...form, password: event.target.value })} /></div></>}
           <button className="primary-button modal-ok" type="submit" disabled={busy}>{busy ? 'Salvando…' : existing ? 'Salvar alterações' : 'Cadastrar associado'}</button>
         </form>
       </section>
@@ -224,6 +312,7 @@ function AdminPanel({ admin, onLogout, onToast }) {
   const [modalMember, setModalMember] = useState(null);
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [showCardInfo, setShowCardInfo] = useState(false);
+  const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -247,7 +336,8 @@ function AdminPanel({ admin, onLogout, onToast }) {
       } else {
         const result = await callMemberManagement({ action: 'create', ...member });
         setMembers(current => [...current, result.member].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
-        onToast(result.temporaryPassword ? `Associado cadastrado. Senha provisória: ${result.temporaryPassword}` : 'Associado cadastrado.');
+        if (result.temporaryPassword) setTemporaryCredential({ registration: result.member.registration, password: result.temporaryPassword });
+        else onToast('Associado cadastrado.');
       }
       setShowMemberForm(false);
       setModalMember(null);
@@ -269,9 +359,11 @@ function AdminPanel({ admin, onLogout, onToast }) {
   };
 
   const resetPassword = async member => {
+    const confirmed = window.confirm(`Antes de redefinir a senha de ${member.name}, confirme que você validou o vínculo no cadastro oficial e confirmou a identidade por um telefone/e-mail que já constava no cadastro ou presencialmente. A matrícula ou um contato informado apenas neste pedido não são suficientes.\n\nDeseja continuar?`);
+    if (!confirmed) return;
     try {
       const result = await callMemberManagement({ action: 'reset_password', id: member.id });
-      onToast(`Nova senha provisória de ${member.registration}: ${result.temporaryPassword}`);
+      setTemporaryCredential({ registration: member.registration, password: result.temporaryPassword });
     } catch (error) {
       onToast(error.message, 'error');
     }
@@ -294,9 +386,13 @@ function AdminPanel({ admin, onLogout, onToast }) {
       setBusy(true);
       try {
         const result = await callMemberManagement({ action: 'import', members: imported });
-        const csvCell = value => `"${String(value).replaceAll('"', '""')}"`;
+        const csvCell = (value, untrusted = false) => {
+          let text = String(value);
+          if (untrusted && /^[\s\uFEFF]*[=+\-@＝＋－＠]/u.test(text)) text = `\t${text}`;
+          return `"${text.replaceAll('"', '""')}"`;
+        };
         const rows = [['nome', 'matricula', 'senha_temporaria'], ...result.members.map(item => [item.name, item.registration, item.temporaryPassword])];
-        const csv = rows.map(row => row.map(csvCell).join(';')).join('\r\n');
+        const csv = rows.map((row, rowIndex) => row.map((value, columnIndex) => csvCell(value, rowIndex > 0 && columnIndex < 2)).join(';')).join('\r\n');
         const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
         const link = document.createElement('a'); link.href = url; link.download = 'servnet-acessos-temporarios.csv'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
         setMembers(current => [...current, ...result.members].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
@@ -313,7 +409,7 @@ function AdminPanel({ admin, onLogout, onToast }) {
 
   return (
     <div className="admin-layout" data-ui="member-list"><aside className="sidebar admin-sidebar"><Brand className="sidebar-brand" /><div className="side-caption">PAINEL DE GESTÃO</div><button className="nav-item selected"><UsersRound /> Associados</button><button className="nav-item" onClick={() => setShowCardInfo(true)}><CreditCard /> Modelo da carteirinha</button>
-      <div className="sidebar-bottom"><div className="sidebar-help"><Settings2 /><div><strong>Área restrita</strong><span>Equipe de TI / CPD</span><button onClick={onLogout}>Sair do painel <ArrowRight /></button></div></div><div className="profile-row"><div className="avatar admin-avatar">TI</div><div className="profile-text"><strong>{admin.email}</strong><span>Administrador SERVNET</span></div><button className="icon-button" aria-label="Sair do painel" onClick={onLogout}><LogOut /></button></div></div>
+      <div className="sidebar-bottom"><div className="sidebar-help"><Settings2 /><div><strong>Área restrita</strong><span>Equipe de TI / CPD</span></div></div><div className="profile-row"><div className="avatar admin-avatar">TI</div><div className="profile-text"><strong>{admin.email}</strong><span>Administrador SERVNET</span></div><button className="icon-button" aria-label="Sair do painel" onClick={onLogout}><LogOut /></button></div></div>
     </aside><div className="admin-main"><header className="topbar"><div className="breadcrumb"><span>Gestão</span><ChevronDown /><strong>Associados</strong></div><button className="mobile-exit admin-mobile-exit" onClick={onLogout}><LogOut /> Sair</button><div className="top-status admin-status"><LockKeyhole /> Área autenticada</div></header>
       <main className="admin-content"><div className="page-heading admin-heading"><div><h1>Associados</h1><p>Gerencie os acessos à carteirinha digital.</p></div><button className="primary-button" onClick={() => { setModalMember(null); setShowMemberForm(true); }}><Plus /> Novo associado</button></div>
         <div className="stats-row"><div className="stat-card"><div className="stat-icon"><UsersRound /></div><div><span>Total de associados</span><strong>{members.length}</strong></div><div className="stat-caption">encontrados</div></div><div className="stat-card"><div className="stat-icon green"><CreditCard /></div><div><span>Acessos ativos</span><strong>{members.filter(member => member.active).length}</strong></div><div className="stat-caption">carteirinhas</div></div></div>
@@ -325,6 +421,7 @@ function AdminPanel({ admin, onLogout, onToast }) {
       </main></div>
       {showMemberForm && <MemberFormModal existing={modalMember} onSave={saveMember} busy={busy} onClose={() => setShowMemberForm(false)} />}
       {showCardInfo && <Modal title="Modelo da carteirinha" onClose={() => setShowCardInfo(false)}><p className="modal-copy">O modelo de teste está ativo. Quando você tiver o arquivo oficial, poderá substituir este placeholder e ajustar a posição dos dados.</p></Modal>}
+      {temporaryCredential && <TemporaryPasswordModal registration={temporaryCredential.registration} password={temporaryCredential.password} onClose={() => setTemporaryCredential(null)} />}
     </div>
   );
 }
@@ -334,6 +431,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const sendToast = useCallback((message, kind = 'success') => setToast({ message, kind }), []);
+  const dismissToast = useCallback(() => setToast(null), []);
   useEffect(() => {
     let current = true;
     restoreCurrentUser()
@@ -358,7 +456,7 @@ function App() {
   else if (user?.role === 'member') screen = <Dashboard member={user} onLogout={logout} onToast={sendToast} />;
   else screen = <LoginScreen onLogin={setUser} onToast={sendToast} />;
 
-  return <div className="font-servnet">{screen}<Toast toast={toast} /></div>;
+  return <div className="font-servnet">{screen}<Toast toast={toast} onDismiss={dismissToast} /></div>;
 }
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>);

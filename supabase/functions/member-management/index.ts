@@ -11,7 +11,7 @@ const emailForRegistration = async (registration: string) => {
 const temporaryPassword = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  return `S${btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
 };
 
 const validName = (value: unknown): value is string => typeof value === 'string' && value.trim().replace(/\s+/g, ' ').length >= 2 && value.trim().length <= 160;
@@ -71,13 +71,14 @@ Deno.serve(async request => {
       if (!validName(body.name) || !validRegistration(body.registration)) return reply({ error: 'Nome ou matrícula inválidos.' }, 400);
       const name = body.name.trim().replace(/\s+/g, ' ');
       const registration = body.registration.trim();
-      const password = typeof body.password === 'string' && body.password ? body.password : temporaryPassword();
+      const password = temporaryPassword();
       if (password.length < 12 || password.length > 256) return reply({ error: 'A senha provisória precisa ter pelo menos 12 caracteres.' }, 400);
       const email = await emailForRegistration(registration);
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
+        user_metadata: { name, full_name: name, display_name: name },
         app_metadata: { role: 'member' },
       });
       if (createError || !created.user) {
@@ -94,22 +95,39 @@ Deno.serve(async request => {
         throw profileError;
       }
       await audit('member.created', profile.id);
-      return reply({ member: safeMember(profile), temporaryPassword: body.password ? undefined : password }, 201);
+      return reply({ member: safeMember(profile), temporaryPassword: password }, 201);
     }
 
     if (body.action === 'update') {
-      if (typeof body.id !== 'string' || !validName(body.name)) return reply({ error: 'Dados inválidos para atualizar o associado.' }, 400);
+      if (typeof body.id !== 'string' || !validName(body.name)) return reply({ error: 'Dados invalidos para atualizar o associado.' }, 400);
+      const name = body.name.trim().replace(/\s+/g, ' ');
+      const { data: currentProfile, error: currentProfileError } = await admin.from('member_profiles')
+        .select('id, name')
+        .eq('id', body.id)
+        .maybeSingle();
+      if (currentProfileError) throw currentProfileError;
+      if (!currentProfile) return reply({ error: 'Associado nao encontrado.' }, 404);
+      const { data: authResult, error: authReadError } = await admin.auth.admin.getUserById(body.id);
+      if (authReadError || !authResult.user) throw authReadError || new Error('Conta de autenticacao nao encontrada.');
+      const previousMetadata = authResult.user.user_metadata || {};
+      const { error: metadataError } = await admin.auth.admin.updateUserById(body.id, {
+        user_metadata: { ...previousMetadata, name, full_name: name, display_name: name },
+      });
+      if (metadataError) throw metadataError;
       const { data, error } = await admin.from('member_profiles')
-        .update({ name: body.name.trim().replace(/\s+/g, ' '), updated_at: new Date().toISOString() })
+        .update({ name, updated_at: new Date().toISOString() })
         .eq('id', body.id)
         .select('id, name, registration, active, created_at')
         .maybeSingle();
-      if (error) throw error;
-      if (!data) return reply({ error: 'Associado não encontrado.' }, 404);
+      if (error || !data) {
+        const { error: rollbackError } = await admin.auth.admin.updateUserById(body.id, { user_metadata: previousMetadata });
+        if (rollbackError) console.error('Could not roll back Auth display metadata after profile update failure.');
+        if (error) throw error;
+        return reply({ error: 'Associado nao encontrado.' }, 404);
+      }
       await audit('member.updated', data.id);
       return reply({ member: safeMember(data) });
     }
-
     if (body.action === 'set_active') {
       if (typeof body.id !== 'string' || typeof body.active !== 'boolean') return reply({ error: 'Dados inválidos.' }, 400);
       const { data, error } = await admin.from('member_profiles')
@@ -163,6 +181,7 @@ Deno.serve(async request => {
             email,
             password,
             email_confirm: true,
+            user_metadata: { name: row.name, full_name: row.name, display_name: row.name },
             app_metadata: { role: 'member' },
           });
           if (createError || !account.user) {

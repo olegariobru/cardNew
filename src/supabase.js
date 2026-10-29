@@ -4,15 +4,24 @@ const projectUrl = import.meta.env.VITE_SUPABASE_URL;
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const isSupabaseConfigured = Boolean(projectUrl && publishableKey && !projectUrl.includes('YOUR_PROJECT_REF') && !publishableKey.includes('YOUR_PUBLIC_KEY'));
 
+// Apaga sessões persistidas por versões anteriores deste app neste navegador.
+if (projectUrl && typeof window !== 'undefined') {
+  try {
+    const projectRef = new URL(projectUrl).hostname.split('.')[0];
+    const legacyStorageKey = `sb-${projectRef}-auth-token`;
+    window.sessionStorage.removeItem(legacyStorageKey);
+    window.localStorage.removeItem(legacyStorageKey);
+  } catch { /* Storage pode estar indisponível em alguns contextos do navegador. */ }
+}
+
 export const supabase = createClient(
   projectUrl || 'https://not-configured.supabase.co',
   publishableKey || 'not-configured',
   {
     auth: {
-      persistSession: true,
+      persistSession: false,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storage: window.sessionStorage,
     },
   },
 );
@@ -49,9 +58,12 @@ export async function logoutSupabase() {
 
 export async function restoreCurrentUser() {
   requireSupabaseConfig();
-  const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session) return null;
-  const authUser = data.session.user;
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  const authUser = data.user;
   if (authUser.app_metadata?.role === 'admin') {
     return { id: authUser.id, email: authUser.email, role: 'admin' };
   }
